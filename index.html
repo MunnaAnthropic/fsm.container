@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Service Call & Activity Details</title>
+    <style>
+        :root {
+            --fsm-blue: #0a6ed1;
+            --fsm-blue-dark: #085cad;
+            --fsm-bg: #f5f6f7;
+            --fsm-card: #ffffff;
+            --fsm-text: #32363a;
+            --fsm-text-light: #6a6d70;
+            --fsm-border: #e4e4e4;
+            --fsm-green: #2e7d32;
+            --fsm-orange: #e65100;
+            --fsm-red: #c62828;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: '72', '72full', Arial, Helvetica, sans-serif;
+            background: var(--fsm-bg);
+            color: var(--fsm-text);
+            padding: 16px;
+            font-size: 14px;
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+
+        .header h2 {
+            color: var(--fsm-blue);
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .header .badge {
+            font-size: 12px;
+            padding: 4px 10px;
+            border-radius: 4px;
+            background: #e3f2fd;
+            color: var(--fsm-blue);
+            font-weight: 600;
+        }
+
+        .card {
+            background: var(--fsm-card);
+            border: 1px solid var(--fsm-border);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+
+        .card-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--fsm-blue);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid var(--fsm-blue);
+        }
+
+        .row {
+            display: flex;
+            align-items: flex-start;
+            padding: 7px 0;
+            border-bottom: 1px solid #f3f3f3;
+        }
+
+        .row:last-child { border-bottom: none; }
+
+        .row .label {
+            min-width: 150px;
+            font-weight: 600;
+            color: var(--fsm-text-light);
+            font-size: 13px;
+        }
+
+        .row .value {
+            color: var(--fsm-text);
+            font-size: 13px;
+            word-break: break-word;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .status-open { background: #e8f5e9; color: var(--fsm-green); }
+        .status-progress { background: #fff3e0; color: var(--fsm-orange); }
+        .status-closed { background: #ffebee; color: var(--fsm-red); }
+        .status-default { background: #e3f2fd; color: var(--fsm-blue); }
+
+        .loading-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 200px;
+        }
+
+        .spinner {
+            width: 36px;
+            height: 36px;
+            border: 3px solid var(--fsm-border);
+            border-top-color: var(--fsm-blue);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .loading-text {
+            margin-top: 12px;
+            color: var(--fsm-text-light);
+            font-size: 13px;
+        }
+
+        .error-box {
+            background: #ffebee;
+            border: 1px solid #ef9a9a;
+            border-radius: 8px;
+            padding: 16px;
+            color: var(--fsm-red);
+            font-size: 13px;
+        }
+
+        .error-box strong { display: block; margin-bottom: 4px; }
+
+        .debug-info {
+            margin-top: 16px;
+            font-size: 11px;
+            color: #999;
+            border-top: 1px dashed #ddd;
+            padding-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h2>Service Call & Activity Details</h2>
+        <span class="badge" id="objectTypeBadge" style="display:none;"></span>
+    </div>
+
+    <div id="content">
+        <div class="loading-container">
+            <div class="spinner"></div>
+            <div class="loading-text">Connecting to SAP FSM...</div>
+        </div>
+    </div>
+
+    <div class="debug-info" id="debugInfo"></div>
+
+    <script src="https://service.2.fsm.cloud.sap/shell-sdk/latest/fsm-shell.js"></script>
+    <script>
+        // ============================================================
+        // CONFIG - Hardcoded Account & Company Details
+        // ============================================================
+        const CONFIG = {
+            ACCOUNT_NAME: 'viasat_T1',
+            COMPANY_NAME: 'ViasatFSMWS',
+            ACCOUNT_ID: '95912',
+            COMPANY_ID: '107538',
+            TOKEN: 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6...',
+            CLIENT_ID: 'service-call-activity-details',
+            CLIENT_VERSION: '1.0.0'
+        };
+
+        // ============================================================
+        // INITIALIZE FSM SHELL SDK
+        // ============================================================
+        let shellSdk;
+        let isShellAvailable = false;
+
+        try {
+            const { ShellSdk, SHELL_EVENTS } = FSMShell;
+            shellSdk = ShellSdk.init(parent, '*');
+            isShellAvailable = true;
+            log('Shell SDK initialized successfully.');
+
+            // Request context from FSM
+            shellSdk.emit(SHELL_EVENTS.Version1.REQUIRE_CONTEXT, JSON.stringify({
+                clientIdentifier: CONFIG.CLIENT_ID,
+                auth: { response_type: 'token' }
+            }));
+
+            // Listen for context response
+            shellSdk.on(SHELL_EVENTS.Version1.REQUIRE_CONTEXT, (event) => {
+                try {
+                    const context = JSON.parse(event);
+                    log('Context received. Object: ' + (context.objectType || 'N/A') + ', ID: ' + (context.objectId || 'N/A'));
+
+                    const token = context.auth?.access_token || CONFIG.TOKEN;
+                    const cloudHost = context.cloudHost || 'us.coresystems.net';
+                    const account = CONFIG.ACCOUNT_NAME;
+                    const company = CONFIG.COMPANY_NAME;
+                    const objectType = context.objectType;
+                    const objectId = context.objectId;
+
+                    if (objectId && objectType) {
+                        showLoading('Fetching ' + objectType + ' details...');
+                        fetchObjectDetails(cloudHost, account, company, token, objectType, objectId);
+                    } else {
+                        showError('No object context found.', 'Please open this extension from a Service Call or Activity screen in SAP FSM.');
+                    }
+                } catch (e) {
+                    showError('Failed to parse context.', e.message);
+                }
+            });
+
+        } catch (e) {
+            isShellAvailable = false;
+            showError(
+                'FSM Shell SDK not available.',
+                'This page must be loaded inside SAP FSM as a Web Container extension. It cannot run standalone in a browser.<br><br>' +
+                '<strong>To use this:</strong><br>' +
+                '1. Go to SAP FSM Admin &rarr; Web Containers<br>' +
+                '2. Set this HTML as the container source<br>' +
+                '3. Assign it to a Service Call or Activity screen<br>' +
+                '4. Open a Service Call or Activity to see it in action.'
+            );
+            log('Shell SDK init failed: ' + e.message);
+        }
+
+        // ============================================================
+        // API CALL
+        // ============================================================
+        async function fetchObjectDetails(cloudHost, account, company, token, objectType, objectId) {
+            try {
+                const url = 'https://' + cloudHost + '/api/data/v4/' + objectType + '/' + objectId
+                    + '?account=' + encodeURIComponent(account)
+                    + '&company=' + encodeURIComponent(company);
+
+                log('Fetching: ' + url);
+
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': 'Bearer ' + token,
+                        'Content-Type': 'application/json',
+                        'X-Client-ID': CONFIG.CLIENT_ID,
+                        'X-Client-Version': CONFIG.CLIENT_VERSION
+                    }
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error('HTTP ' + response.status + ': ' + response.statusText + ' - ' + errorText);
+                }
+
+                const data = await response.json();
+                const record = (data.data && data.data.length > 0) ? data.data[0] : data;
+
+                log('Data received successfully.');
+                displayDetails(objectType, record);
+
+            } catch (error) {
+                showError('Error fetching details.', error.message);
+                log('Fetch error: ' + error.message);
+            }
+        }
+
+        // ============================================================
+        // DISPLAY
+        // ============================================================
+        function displayDetails(objectType, data) {
+            // Show badge
+            const badge = document.getElementById('objectTypeBadge');
+            badge.textContent = objectType === 'ServiceCall' ? 'Service Call' : 'Activity';
+            badge.style.display = 'inline-block';
+
+            let html = '';
+
+            // Account & Company Card
+            html += '<div class="card">';
+            html += '<div class="card-title">Account & Company</div>';
+            html += makeRow('Account', CONFIG.ACCOUNT_NAME + ' (' + CONFIG.ACCOUNT_ID + ')');
+            html += makeRow('Company', CONFIG.COMPANY_NAME + ' (' + CONFIG.COMPANY_ID + ')');
+            html += '</div>';
+
+            // Object Details Card
+            html += '<div class="card">';
+            html += '<div class="card-title">' + (objectType === 'ServiceCall' ? 'Service Call' : 'Activity') + ' Details</div>';
+
+            if (objectType === 'ServiceCall') {
+                html += makeRow('ID', data.id);
+                html += makeRow('Code', data.code);
+                html += makeRow('Subject', data.subject);
+                html += makeRow('Status', data.status, 'status');
+                html += makeRow('Priority', data.priority);
+                html += makeRow('Origin', data.origin);
+                html += makeRow('Problem Type', data.problemTypeName);
+                html += makeRow('Equipment', data.equipmentName);
+                html += makeRow('Contact', data.contactName);
+                html += makeRow('Created', formatDate(data.createDateTime));
+                html += makeRow('Due Date', formatDate(data.dueDateTime));
+                html += makeRow('Resolution', data.resolution);
+                html += makeRow('Remarks', data.remarks);
+            } else if (objectType === 'Activity') {
+                html += makeRow('ID', data.id);
+                html += makeRow('Code', data.code);
+                html += makeRow('Subject', data.subject);
+                html += makeRow('Status', data.status, 'status');
+                html += makeRow('Type', data.type);
+                html += makeRow('Start Date', formatDate(data.startDateTime));
+                html += makeRow('End Date', formatDate(data.endDateTime));
+                html += makeRow('Responsible', data.responsibleName);
+                html += makeRow('Contact', data.contactName);
+                html += makeRow('Address', data.address);
+                html += makeRow('Remarks', data.remarks);
+            } else {
+                // Generic fallback: display all keys
+                for (const key in data) {
+                    if (data.hasOwnProperty(key) && data[key] !== null && data[key] !== '') {
+                        html += makeRow(key, String(data[key]));
+                    }
+                }
+            }
+
+            html += '</div>';
+            document.getElementById('content').innerHTML = html;
+        }
+
+        // ============================================================
+        // HELPERS
+        // ============================================================
+        function makeRow(label, value, type) {
+            let displayValue = value || 'N/A';
+
+            if (type === 'status' && value) {
+                let cls = 'status-default';
+                const v = value.toLowerCase();
+                if (v === 'open' || v === 'new' || v === 'ready') cls = 'status-open';
+                else if (v.includes('progress') || v === 'assigned' || v === 'dispatched') cls = 'status-progress';
+                else if (v === 'closed' || v === 'completed' || v === 'done') cls = 'status-closed';
+                displayValue = '<span class="status-badge ' + cls + '">' + escapeHtml(value) + '</span>';
+            } else {
+                displayValue = escapeHtml(displayValue);
+            }
+
+            return '<div class="row">'
+                + '<span class="label">' + escapeHtml(label) + ':</span>'
+                + '<span class="value">' + displayValue + '</span>'
+                + '</div>';
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return 'N/A';
+            try {
+                var d = new Date(dateStr);
+                if (isNaN(d.getTime())) return dateStr;
+                return d.toLocaleDateString('en-US', {
+                    year: 'numeric', month: 'short', day: 'numeric',
+                    hour: '2-digit', minute: '2-digit'
+                });
+            } catch (e) {
+                return dateStr;
+            }
+        }
+
+        function escapeHtml(str) {
+            var div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        function showLoading(message) {
+            document.getElementById('content').innerHTML =
+                '<div class="loading-container">'
+                + '<div class="spinner"></div>'
+                + '<div class="loading-text">' + escapeHtml(message) + '</div>'
+                + '</div>';
+        }
+
+        function showError(title, detail) {
+            document.getElementById('content').innerHTML =
+                '<div class="error-box">'
+                + '<strong>' + escapeHtml(title) + '</strong>'
+                + (detail ? detail : '')
+                + '</div>';
+        }
+
+        function log(msg) {
+            var el = document.getElementById('debugInfo');
+            var time = new Date().toLocaleTimeString();
+            el.innerHTML += '[' + time + '] ' + escapeHtml(msg) + '<br>';
+        }
+    </script>
+</body>
+</html>
