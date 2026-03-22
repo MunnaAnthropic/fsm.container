@@ -164,17 +164,16 @@
 
     <div class="debug-info" id="debugInfo"></div>
 
-    <script src="https://us.fsm.cloud.sap/shell-sdk/latest/fsm-shell.js"></script>
+    <script src="https://service.us.fsm.cloud.sap/shell-sdk/latest/fsm-shell.js"></script>
     <script>
         // ============================================================
-        // CONFIG - Hardcoded Account & Company Details
+        // CONFIG - Account & Company Details
         // ============================================================
         const CONFIG = {
             ACCOUNT_NAME: 'viasat_T1',
             COMPANY_NAME: 'ViasatFSMWS',
             ACCOUNT_ID: '95912',
             COMPANY_ID: '107538',
-            TOKEN: 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6...',
             CLIENT_ID: 'service-call-activity-details',
             CLIENT_VERSION: '1.0.0'
         };
@@ -203,12 +202,17 @@
                     const context = JSON.parse(event);
                     log('Context received. Object: ' + (context.objectType || 'N/A') + ', ID: ' + (context.objectId || 'N/A'));
 
-                    const token = context.auth?.access_token || CONFIG.TOKEN;
+                    const token = context.auth?.access_token;
                     const cloudHost = context.cloudHost || 'us.coresystems.net';
-                    const account = CONFIG.ACCOUNT_NAME;
-                    const company = CONFIG.COMPANY_NAME;
+                    const account = context.account || CONFIG.ACCOUNT_NAME;
+                    const company = context.company || CONFIG.COMPANY_NAME;
                     const objectType = context.objectType;
                     const objectId = context.objectId;
+
+                    if (!token) {
+                        showError('No access token received.', 'Make sure the Authentication Key (Client Secret) is correctly configured in the Web Container settings.');
+                        return;
+                    }
 
                     if (objectId && objectType) {
                         showLoading('Fetching ' + objectType + ' details...');
@@ -250,9 +254,7 @@
                     method: 'GET',
                     headers: {
                         'Authorization': 'Bearer ' + token,
-                        'Content-Type': 'application/json',
-                        'X-Client-ID': CONFIG.CLIENT_ID,
-                        'X-Client-Version': CONFIG.CLIENT_VERSION
+                        'Accept': 'application/json'
                     }
                 });
 
